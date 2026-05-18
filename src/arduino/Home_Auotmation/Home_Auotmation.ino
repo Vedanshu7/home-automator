@@ -1,25 +1,25 @@
 /*
- * home-automator firmware
+ * home-automator firmware.
  *
  * Controls 4 relay outputs (A0–A3) via ESP8266 WiFi + DS3231 RTC.
  *
  * Immediate command protocol (2-char codes from Android app):
- *   "11" / "55" → relay 1 ON / OFF
- *   "15" / "60" → relay 2 ON / OFF
- *   "44" / "77" → relay 3 ON / OFF
- *   "95" / "88" → relay 4 ON / OFF
+ *   "11" / "55" → relay 1 ON / OFF.
+ *   "15" / "60" → relay 2 ON / OFF.
+ *   "44" / "77" → relay 3 ON / OFF.
+ *   "95" / "88" → relay 4 ON / OFF.
  *
  * Schedule packet (16-char string):
- *   [0–3]   relay mask  — non-'0' at position i means relay (i+1) is included
- *                         e.g. "1034" → relays 1, 3, 4
- *   [4–5]   target hour (2-digit, 24 h)
- *   [6–7]   target minute
- *   [8–9]   unused
- *   [10]    delay hours ("2", "3", or "4")
- *   [11]    unused
- *   [12]    relay count
- *   [13]    unused
- *   [14–15] action code — '6' = schedule ON, '9' = schedule OFF
+ *   [0–3]   relay mask — non-'0' at position i means relay (i+1) is included,
+ *           e.g. "1034" selects relays 1, 3, and 4.
+ *   [4–5]   target hour (2-digit, 24 h).
+ *   [6–7]   target minute.
+ *   [8–9]   unused.
+ *   [10]    delay hours ("2", "3", or "4").
+ *   [11]    unused.
+ *   [12]    relay count.
+ *   [13]    unused.
+ *   [14–15] action code — '6' = schedule ON, '9' = schedule OFF.
  *
  * Relay wiring: active-LOW (HIGH = OFF, LOW = ON).
  */
@@ -28,18 +28,26 @@
 #include <Wire.h>
 #include "Sodaq_DS3231.h"
 
-// ── Pins ──────────────────────────────────────────────────────────────────────
+// ============================================================
+// Pin definitions.
+// ============================================================
+
 static const uint8_t RELAY_PINS[] = { A0, A1, A2, A3 };
 static const uint8_t NUM_RELAYS   = sizeof(RELAY_PINS);
 
-SoftwareSerial esp8266(12, 13); // RX, TX
+// RX pin 12, TX pin 13.
+SoftwareSerial esp8266(12, 13);
 
-// ── Schedule ──────────────────────────────────────────────────────────────────
+// ============================================================
+// Schedule state.
+// ============================================================
+
 struct Schedule {
     uint8_t hour;
     uint8_t minute;
     uint8_t second;
-    uint8_t relayMask; // bit i set → RELAY_PINS[i] fires
+    // Bit i set means RELAY_PINS[i] fires when this schedule triggers.
+    uint8_t relayMask;
     bool    active;
 };
 
@@ -47,7 +55,9 @@ static Schedule onSchedule  = {};
 static Schedule offSchedule = {};
 static uint32_t lastEpoch   = 0;
 
-// ── Relay helpers ─────────────────────────────────────────────────────────────
+// ============================================================
+// Relay control helpers.
+// ============================================================
 
 // Toggle every relay whose bit is set in mask.
 static void applyRelays(uint8_t mask, uint8_t state) {
@@ -68,7 +78,10 @@ static uint8_t parseMask(const String& s) {
     return mask;
 }
 
-// ── Immediate command table ───────────────────────────────────────────────────
+// ============================================================
+// Immediate command dispatch table.
+// ============================================================
+
 struct Cmd { const char* code; uint8_t relay; uint8_t state; };
 
 static const Cmd COMMANDS[] = {
@@ -88,20 +101,26 @@ static void handleCommand(const String& cmd) {
     }
 }
 
-// ── Packet extraction ─────────────────────────────────────────────────────────
+// ============================================================
+// ESP packet extraction.
+// ============================================================
+
 // Strip non-digit characters from the raw ESP packet and return the payload.
 static String extractPayload(const String& raw) {
     String digits;
     for (uint16_t i = 0; i < raw.length(); i++) {
         if (raw[i] >= '0' && raw[i] <= '9') digits += raw[i];
     }
-    if (digits.length() == 5)  return digits.substring(2, 4);   // 2-char command
-    if (digits.length() == 20) return digits.substring(3, 19);  // 16-char schedule
+    if (digits.length() == 5)  return digits.substring(2, 4);
+    if (digits.length() == 20) return digits.substring(3, 19);
     if (digits.length() == 16) return digits;
     return "";
 }
 
-// ── Schedule parser ───────────────────────────────────────────────────────────
+// ============================================================
+// Scheduled action parser.
+// ============================================================
+
 static void parseSchedule(const String& s) {
     if (s.length() != 16) return;
 
@@ -132,7 +151,8 @@ static void parseSchedule(const String& s) {
         // Sub-hour scheduling: fire 2 minutes from now when target is within the same hour.
         fireMin = curMin + 2;
     } else {
-        return; // timing doesn't match expected window — ignore
+        // Timing does not match expected window — ignore packet.
+        return;
     }
 
     Schedule sched = { fireHr, fireMin, fireSec, mask, true };
@@ -146,11 +166,15 @@ static void parseSchedule(const String& s) {
     }
 }
 
-// ── Arduino lifecycle ─────────────────────────────────────────────────────────
+// ============================================================
+// Arduino setup and main loop.
+// ============================================================
+
 void setup() {
     for (uint8_t i = 0; i < NUM_RELAYS; i++) {
         pinMode(RELAY_PINS[i], OUTPUT);
-        digitalWrite(RELAY_PINS[i], HIGH); // start all relays OFF
+        // Start all relays OFF (active-LOW, so HIGH = OFF).
+        digitalWrite(RELAY_PINS[i], HIGH);
     }
 
     Serial.begin(9600);
@@ -166,7 +190,10 @@ void setup() {
 void loop() {
     delay(10);
 
-    // ── WiFi input ────────────────────────────────────────────────────────────
+    // ============================================================
+    // Read and dispatch incoming WiFi packets.
+    // ============================================================
+
     if (esp8266.available()) {
         String raw;
         while (esp8266.available()) raw += (char)esp8266.read();
@@ -178,7 +205,10 @@ void loop() {
         else if (payload.length() == 16) parseSchedule(payload);
     }
 
-    // ── Schedule tick (runs once per RTC second) ──────────────────────────────
+    // ============================================================
+    // Fire pending scheduled relay actions (runs once per RTC second).
+    // ============================================================
+
     DateTime now = rtc.now();
     uint32_t ts  = now.getEpoch();
 
@@ -202,7 +232,10 @@ void loop() {
         }
     }
 
-    // ── Serial passthrough to ESP (AT command mode) ───────────────────────────
+    // ============================================================
+    // Forward Serial input to ESP for AT command passthrough.
+    // ============================================================
+
     if (Serial.available()) {
         delay(10);
         String cmd;
