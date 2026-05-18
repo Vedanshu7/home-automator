@@ -66,4 +66,4 @@ home-automator/
 
 ## License
 
-MIT
+[MIT](LICENSE)
