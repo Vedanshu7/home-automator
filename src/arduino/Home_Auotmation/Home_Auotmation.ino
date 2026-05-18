@@ -1,1385 +1,212 @@
-#include "SoftwareSerial.h"
-SoftwareSerial esp8266(12, 13); // RX, TX
+/*
+ * home-automator firmware
+ *
+ * Controls 4 relay outputs (A0–A3) via ESP8266 WiFi + DS3231 RTC.
+ *
+ * Immediate command protocol (2-char codes from Android app):
+ *   "11" / "55" → relay 1 ON / OFF
+ *   "15" / "60" → relay 2 ON / OFF
+ *   "44" / "77" → relay 3 ON / OFF
+ *   "95" / "88" → relay 4 ON / OFF
+ *
+ * Schedule packet (16-char string):
+ *   [0–3]   relay mask  — non-'0' at position i means relay (i+1) is included
+ *                         e.g. "1034" → relays 1, 3, 4
+ *   [4–5]   target hour (2-digit, 24 h)
+ *   [6–7]   target minute
+ *   [8–9]   unused
+ *   [10]    delay hours ("2", "3", or "4")
+ *   [11]    unused
+ *   [12]    relay count
+ *   [13]    unused
+ *   [14–15] action code — '6' = schedule ON, '9' = schedule OFF
+ *
+ * Relay wiring: active-LOW (HIGH = OFF, LOW = ON).
+ */
+
+#include <SoftwareSerial.h>
 #include <Wire.h>
 #include "Sodaq_DS3231.h"
-char weekDay[][4] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-int Hour1,Min,Sec,Hour2,Min1,Sec1;
-String On,Off;
-#define a1 A0
-#define b1 A1
-#define c1 A2
-#define d1 A3
-void setup()
-{
-  pinMode(a1, OUTPUT);
-  pinMode(b1, OUTPUT);
-  pinMode(c1, OUTPUT);
-  pinMode(d1, OUTPUT);
-  digitalWrite(a1,HIGH);
-  digitalWrite(b1,HIGH);
-  digitalWrite(c1,HIGH);
-  digitalWrite(d1,HIGH);
-  Serial.begin(9600);
-  esp8266.begin(115200);  // your ESP's baud rate might be different
-  esp8266.println("AT+CWMODE=2");
-  delay(200);
-  esp8266.println("AT+CIPMUX=1");
-  delay(200);
-  esp8266.println("AT+CIPSERVER=1,333");
-   Wire.begin();
-  rtc.begin();
-}
-uint32_t old_ts;
-void loop()
-{
-  delay(10);
-  String str = "", Ac = "";
-   DateTime now = rtc.now(); //get the current date-time
-    uint32_t ts = now.getEpoch();
-  if (esp8266.available()) // check if the ESP is sending a message
-  {
-    
-    while (esp8266.available())
-    {
-      str += (char) esp8266.read();
-    }
-    String A = manageString(str);
-    Serial.println(A);
-    if (A.length() == 2) {
-     
-      if (A == "11") {
-        digitalWrite(a1, HIGH);
-      }
-      else if (A == "55") {
-        digitalWrite(a1, LOW);
-      }
-      else if (A == "15" ) {
-        digitalWrite(b1, HIGH);
-      }
-      else if (A == "60") {
-        digitalWrite(b1,LOW);
-      }
-      else if (A == "44") {
-        digitalWrite(c1, HIGH);
-      }
-      else if (A == "77") {
-        digitalWrite(c1, LOW);
-        
-      }
-     else if (A == "95") {
-        digitalWrite(d1, HIGH);
-        
-      }
-      else if (A == "88") {
-        digitalWrite(d1, LOW);
-        //delay(1000);
-      }
-      
-    }
-    else if(A.length()==16){
-         passTheString(A);
-    }
-  }
-  if (old_ts == 0 || old_ts != ts) {
-      old_ts = ts;
-      DateTime now = rtc.now();
-      int h11,m11,s11;
-      h11=now.hour();
-      m11=now.minute();
-      s11=now.second();
-    if(h11 == Hour1 && m11==Min && s11==Sec){
-      if(On.length()==1){
-         if(On=="1"){
-          digitalWrite(a1,LOW);
-         }
-         else if(On=="2"){
-          digitalWrite(b1,LOW);
-         }
-         else if(On=="3"){
-          digitalWrite(c1,LOW);
-         }
-         else if(On=="4"){
-          digitalWrite(d1,LOW);
-         }
-      }
-      else if(On.length()==2){
-        if(On=="12"){
-          digitalWrite(a1,LOW);
-          digitalWrite(b1,LOW);
-         }
-         else if(On=="13"){
-          digitalWrite(a1,LOW);
-          digitalWrite(c1,LOW);
-         }
-         else if(On=="14"){
-          digitalWrite(a1,LOW);
-          digitalWrite(d1,LOW);
-         }
-         else if(On=="23"){
-          digitalWrite(b1,LOW);
-          digitalWrite(c1,LOW);
-         }
-         else if(On=="24"){
-          digitalWrite(b1,LOW);
-          digitalWrite(d1,LOW);
-         }
-         else if(On=="34"){
-          digitalWrite(c1,LOW);
-          digitalWrite(d1,LOW);
-         }
-      }
-      else if(On.length()==3){
-        if(On=="123"){
-          digitalWrite(a1,LOW);
-          digitalWrite(b1,LOW);
-          digitalWrite(c1,LOW);
-         }
-         else if(On=="134"){
-          digitalWrite(a1,LOW);
-          digitalWrite(c1,LOW);
-          digitalWrite(d1,LOW);
-         }
-         else if(On=="234"){
-          digitalWrite(b1,LOW);
-          digitalWrite(c1,LOW);
-          digitalWrite(d1,LOW);
-         }
-         else if(On=="124"){
-          digitalWrite(a1,LOW);
-          digitalWrite(b1,LOW);
-          digitalWrite(d1,LOW);
-         }
-      }
-      else if(On.length()==4){
-        if(On=="1234"){
-          digitalWrite(a1,LOW);
-          digitalWrite(b1,LOW);
-          digitalWrite(c1,LOW);
-          digitalWrite(d1,LOW);
-        }
-      }
-    }
-    if(h11 == Hour2 && m11==Min1 && s11==Sec1){
-      if(Off.length()==1){
-         if(Off=="1"){
-          digitalWrite(a1,HIGH);
-         }
-         else if(Off=="2"){
-          digitalWrite(b1,HIGH);
-         }
-         else if(Off=="3"){
-          digitalWrite(c1,HIGH);
-         }
-         else if(Off=="4"){
-          digitalWrite(d1,HIGH);
-         }
-      }
-      else if(Off.length()==2){
-        if(Off=="12"){
-          digitalWrite(a1,HIGH);
-          digitalWrite(b1,HIGH);
-         }
-         else if(Off=="13"){
-          digitalWrite(a1,HIGH);
-          digitalWrite(c1,HIGH);
-         }
-         else if(Off=="14"){
-          digitalWrite(a1,HIGH);
-          digitalWrite(d1,HIGH);
-         }
-         else if(Off=="23"){
-          digitalWrite(b1,HIGH);
-          digitalWrite(c1,HIGH);
-         }
-         else if(Off=="24"){
-          digitalWrite(b1,HIGH);
-          digitalWrite(d1,HIGH);
-         }
-         else if(Off=="34"){
-          digitalWrite(c1,HIGH);
-          digitalWrite(d1,HIGH);
-         }
-      }
-      else if(Off.length()==3){
-        if(Off=="123"){
-          digitalWrite(a1,HIGH);
-          digitalWrite(b1,HIGH);
-          digitalWrite(c1,HIGH);
-         }
-         else if(Off=="134"){
-          digitalWrite(a1,HIGH);
-          digitalWrite(c1,HIGH);
-          digitalWrite(d1,HIGH);
-         }
-         else if(Off=="234"){
-          digitalWrite(b1,HIGH);
-          digitalWrite(c1,HIGH);
-          digitalWrite(d1,HIGH);
-         }
-         else if(Off=="124"){
-         digitalWrite(a1,HIGH);
-          digitalWrite(b1,HIGH);
-          digitalWrite(d1,HIGH);
-         }
-      }
-      else if(Off.length()==4){
-        if(Off=="1234"){
-          digitalWrite(a1,HIGH);
-          digitalWrite(b1,HIGH);
-          digitalWrite(c1,HIGH);
-          digitalWrite(d1,HIGH);
-        }
-      }
-    }
-  }
-    if (Serial.available())
-    {
-      delay(10);  // wait to let all the input command in the serial buffer
 
-      // read the input command in a string
-      String cmd = "";
-      while (Serial.available())
-      {
-        cmd += (char)Serial.read();
-      }
-      // send to the esp8266
-      esp8266.println(cmd);
+// ── Pins ──────────────────────────────────────────────────────────────────────
+static const uint8_t RELAY_PINS[] = { A0, A1, A2, A3 };
+static const uint8_t NUM_RELAYS   = sizeof(RELAY_PINS);
+
+SoftwareSerial esp8266(12, 13); // RX, TX
+
+// ── Schedule ──────────────────────────────────────────────────────────────────
+struct Schedule {
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+    uint8_t relayMask; // bit i set → RELAY_PINS[i] fires
+    bool    active;
+};
+
+static Schedule onSchedule  = {};
+static Schedule offSchedule = {};
+static uint32_t lastEpoch   = 0;
+
+// ── Relay helpers ─────────────────────────────────────────────────────────────
+
+// Toggle every relay whose bit is set in mask.
+static void applyRelays(uint8_t mask, uint8_t state) {
+    for (uint8_t i = 0; i < NUM_RELAYS; i++) {
+        if (mask & (1 << i)) {
+            digitalWrite(RELAY_PINS[i], state);
+        }
     }
-    
-  }
-  String manageString(String str) {
-    String Ac = "";
-    for (int i = 0; str[i] != '\0'; i++) {
-      if (str[i] >= '0' && str[i] <= '9') {
-        Ac += str[i];
-      }
+}
+
+// Convert a 4-char relay string (e.g. "1034") to a 4-bit mask.
+// A non-'0' character at position i means relay (i+1) is selected.
+static uint8_t parseMask(const String& s) {
+    uint8_t mask = 0;
+    for (uint8_t i = 0; i < 4 && i < (uint8_t)s.length(); i++) {
+        if (s[i] != '0') mask |= (1 << i);
     }
-    
-    if (Ac.length() == 5) {
-      Ac = Ac.substring(2, 4);
-     // Serial.print(Ac);
+    return mask;
+}
+
+// ── Immediate command table ───────────────────────────────────────────────────
+struct Cmd { const char* code; uint8_t relay; uint8_t state; };
+
+static const Cmd COMMANDS[] = {
+    { "11", 0, HIGH }, { "55", 0, LOW  },
+    { "15", 1, HIGH }, { "60", 1, LOW  },
+    { "44", 2, HIGH }, { "77", 2, LOW  },
+    { "95", 3, HIGH }, { "88", 3, LOW  },
+};
+static const uint8_t CMD_COUNT = sizeof(COMMANDS) / sizeof(COMMANDS[0]);
+
+static void handleCommand(const String& cmd) {
+    for (uint8_t i = 0; i < CMD_COUNT; i++) {
+        if (cmd == COMMANDS[i].code) {
+            digitalWrite(RELAY_PINS[COMMANDS[i].relay], COMMANDS[i].state);
+            return;
+        }
     }
-    else if (Ac.length() == 20) {
-      Ac = Ac.substring(3, 19);
-      //Serial.println(Ac);
+}
+
+// ── Packet extraction ─────────────────────────────────────────────────────────
+// Strip non-digit characters from the raw ESP packet and return the payload.
+static String extractPayload(const String& raw) {
+    String digits;
+    for (uint16_t i = 0; i < raw.length(); i++) {
+        if (raw[i] >= '0' && raw[i] <= '9') digits += raw[i];
     }
-    else
-    {
-      if(Ac.length()==16){
-      }
-      else{
-        Ac="0";
-      }
-    }
-    return Ac;
-  }
-  void passTheString(String S){
-    String b=S.substring(10,11);
-    String c=S.substring(12,13);
-    String d=S.substring(0,4);
-    String f=S.substring(4,6);
-    String g=S.substring(6,8);
-    String o=S.substring(14,15);
-    String h=S.substring(15,16);
-    int hou,mint,sec;
+    if (digits.length() == 5)  return digits.substring(2, 4);   // 2-char command
+    if (digits.length() == 20) return digits.substring(3, 19);  // 16-char schedule
+    if (digits.length() == 16) return digits;
+    return "";
+}
+
+// ── Schedule parser ───────────────────────────────────────────────────────────
+static void parseSchedule(const String& s) {
+    if (s.length() != 16) return;
+
+    uint8_t mask      = parseMask(s.substring(0, 4));
+    int     targetHr  = s.substring(4, 6).toInt();
+    int     targetMin = s.substring(6, 8).toInt();
+    int     delayHrs  = s.substring(10, 11).toInt();
+    bool    isOn      = (s[14] == '6');
+    bool    isOff     = (s[14] == '9');
+
+    if (!isOn && !isOff) return;
+
     DateTime now = rtc.now();
-    hou=now.hour();
-    mint=now.minute();
-    sec=now.second();
-    Serial.println(hou);
-    Serial.println(mint);
-    Serial.println(sec);
-    int q=f.toInt();
-    int p=g.toInt();
-    if(o=="6" || h=="6"){
-    if(b=="2"){
-      if(c=="1"){
-        if(d=="1000"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="1";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0200"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="2";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0030"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="3";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0004"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="4";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
-      else if(c=="2"){
-        if(d=="1200"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="12";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1030"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="13";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1004"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="14";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0230"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="23";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0204"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="24";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0034"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="34";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
-      else if(c=="3"){
-        if(d=="1230"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="123";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0234"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="234";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1034"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="134";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1204"){
-          if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="124";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
-      else if(c=="4"){
-        if(d=="1234"){
-         if(q-hou==2){
-            Hour1=hou+2;
-            Min=mint;
-            Sec=sec;
-            On="1234";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
+    int curHr  = now.hour();
+    int curMin = now.minute();
+    int curSec = now.second();
+
+    int hrDiff  = targetHr  - curHr;
+    int minDiff = targetMin - curMin;
+
+    uint8_t fireHr  = curHr;
+    uint8_t fireMin = curMin;
+    uint8_t fireSec = curSec;
+
+    if (hrDiff == delayHrs) {
+        fireHr = curHr + delayHrs;
+    } else if (delayHrs >= 3 && hrDiff == 0 && (minDiff == 2 || minDiff == 3)) {
+        // Sub-hour scheduling: fire 2 minutes from now when target is within the same hour.
+        fireMin = curMin + 2;
+    } else {
+        return; // timing doesn't match expected window — ignore
     }
-    else if(b=="3"){
-         if(c=="1"){
-        if(d=="1000"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="1";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="1";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0200"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="2";
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="2";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0030"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="3";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="3";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0004"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="4";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="4";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
-      else if(c=="2"){
-        if(d=="1200"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="12";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="12";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1030"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="13";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="13";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1004"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="14";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="14";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0230"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="23";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="23";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0204"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="24";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="24";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0034"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="34";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="34";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
-      else if(c=="3"){
-        if(d=="1230"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="123";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="123";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0234"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="234";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="234";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1034"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="134";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="134";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1204"){
-          if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="124";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour1=hou;
-            Min=mint;
-            Sec=sec;
-            On="124";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
-      else if(c=="4"){
-        if(d=="1234"){
-         if(q-hou==3){
-            Hour1=hou+3;
-            Min=mint;
-            Sec=sec;
-            On="1234";
-            digitalWrite(a1,LOW);
-          }
-          else if(q==hou && p-mint==2){
-            Hour1=hou;
-            Min=mint+2;
-            Sec=sec;
-            On="1234";
-            digitalWrite(a1,LOW);
-            Serial.println("Sated");
-          }
-        }
-      }
+
+    Schedule sched = { fireHr, fireMin, fireSec, mask, true };
+
+    if (isOn) {
+        onSchedule = sched;
+        applyRelays(mask, LOW);
+    } else {
+        offSchedule = sched;
+        applyRelays(mask, HIGH);
     }
-    else if(b=="4"){
-      if(c=="1"){
-        if(d=="1000"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="1";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0200"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="2";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0030"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="3";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0004"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="4";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
-      else if(c=="2"){
-        if(d=="1200"){
-          if(q-hou==4){
-           Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="12";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1030"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="13";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1004"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="14";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0230"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="23";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0204"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="24";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0034"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="34";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
-      else if(c=="3"){
-        if(d=="1230"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="123";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="0234"){
-          if(q-hou==4){
-           Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="234";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1034"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="134";
-            digitalWrite(a1,LOW);
-          }
-        }
-        else if(d=="1204"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="124";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
-      else if(c=="4"){
-        if(d=="1234"){
-          if(q-hou==4){
-            Hour1=hou+4;
-            Min=mint;
-            Sec=sec;
-            On="1234";
-            digitalWrite(a1,LOW);
-          }
-        }
-      }
+}
+
+// ── Arduino lifecycle ─────────────────────────────────────────────────────────
+void setup() {
+    for (uint8_t i = 0; i < NUM_RELAYS; i++) {
+        pinMode(RELAY_PINS[i], OUTPUT);
+        digitalWrite(RELAY_PINS[i], HIGH); // start all relays OFF
     }
-    else{
-      
+
+    Serial.begin(9600);
+    esp8266.begin(115200);
+    esp8266.println("AT+CWMODE=2"); delay(200);
+    esp8266.println("AT+CIPMUX=1"); delay(200);
+    esp8266.println("AT+CIPSERVER=1,333");
+
+    Wire.begin();
+    rtc.begin();
+}
+
+void loop() {
+    delay(10);
+
+    // ── WiFi input ────────────────────────────────────────────────────────────
+    if (esp8266.available()) {
+        String raw;
+        while (esp8266.available()) raw += (char)esp8266.read();
+
+        String payload = extractPayload(raw);
+        Serial.println(payload);
+
+        if (payload.length() == 2)       handleCommand(payload);
+        else if (payload.length() == 16) parseSchedule(payload);
     }
-   }
-   else if(o=="9" || h=="9"){
-    if(b=="2"){
-      if(c=="1"){
-        if(d=="1000"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="1";
-            digitalWrite(b1,HIGH);
-          }
+
+    // ── Schedule tick (runs once per RTC second) ──────────────────────────────
+    DateTime now = rtc.now();
+    uint32_t ts  = now.getEpoch();
+
+    if (ts != lastEpoch) {
+        lastEpoch = ts;
+        uint8_t h = now.hour(), m = now.minute(), s = now.second();
+
+        if (onSchedule.active
+                && h == onSchedule.hour
+                && m == onSchedule.minute
+                && s == onSchedule.second) {
+            applyRelays(onSchedule.relayMask, LOW);
+            onSchedule.active = false;
         }
-        else if(d=="0200"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="2";
-            digitalWrite(b1,HIGH);
-          }
+        if (offSchedule.active
+                && h == offSchedule.hour
+                && m == offSchedule.minute
+                && s == offSchedule.second) {
+            applyRelays(offSchedule.relayMask, HIGH);
+            offSchedule.active = false;
         }
-        else if(d=="0030"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="3";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0004"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="4";
-            digitalWrite(b1,HIGH);
-          }
-        }
-      }
-      else if(c=="2"){
-        if(d=="1200"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="12";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1030"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="13";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1004"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="14";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0230"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="23";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0204"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="24";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0034"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="34";
-           digitalWrite(b1,HIGH);
-          }
-        }
-      }
-      else if(c=="3"){
-        if(d=="1230"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="123";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0234"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1034"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="134";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1204"){
-          if(q-hou==2){
-            Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="124";
-            digitalWrite(b1,HIGH);
-          }
-        }
-      }
-      else if(c=="4"){
-        if(d=="1234"){
-         if(q-hou==2){
-           Hour2=hou+2;
-            Min1=mint;
-            Sec1=sec;
-            Off="1234";
-            digitalWrite(b1,HIGH);
-          }
-        }
-      }
     }
-    else if(b=="3"){
-         if(c=="1"){
-        if(d=="1000"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="1";
-           digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="1";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0200"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="2";
-            digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="2";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0030"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="3";
-            digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="3";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0004"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="4";
-            digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="4";
-            digitalWrite(b1,HIGH);
-          }
-        }
-      }
-      else if(c=="2"){
-        if(d=="1200"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="12";
-            digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="12";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1030"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="13";
-            digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="13";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1004"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="14";
-           digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="14";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0230"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="23";
-            digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="23";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0204"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="24";
-           digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="24";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0034"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="34";
-           digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="34";
-          digitalWrite(b1,HIGH);
-          }
-        }
-      }
-      else if(c=="3"){
-        if(d=="1230"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="123";
-           digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="123";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0234"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="234";
-            digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="234";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1034"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="134";
-           digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-           Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="134";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1204"){
-          if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="124";
-          digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="124";
-          digitalWrite(b1,HIGH);
-          }
-        }
-      }
-      else if(c=="4"){
-        if(d=="1234"){
-         if(q-hou==3){
-            Hour2=hou+3;
-            Min1=mint;
-            Sec1=sec;
-            Off="1234";
-            digitalWrite(b1,HIGH);
-          }
-          else if(q==hou && p-mint==2 || p-mint==3){
-            Hour2=hou;
-            Min1=mint+2;
-            Sec1=sec;
-            Off="1234";
-            digitalWrite(b1,HIGH);
-            Serial.println("Sated");
-          }
-        }
-      }
+
+    // ── Serial passthrough to ESP (AT command mode) ───────────────────────────
+    if (Serial.available()) {
+        delay(10);
+        String cmd;
+        while (Serial.available()) cmd += (char)Serial.read();
+        esp8266.println(cmd);
     }
-    else if(b=="4"){
-      if(c=="1"){
-        if(d=="1000"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="1";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0200"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="2";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0030"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="3";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0004"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="4";
-            digitalWrite(b1,HIGH);
-          }
-        }
-      }
-      else if(c=="2"){
-        if(d=="1200"){
-          if(q-hou==4){
-           Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="12";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1030"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="13";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1004"){
-          if(q-hou==4){
-           Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="14";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0230"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="23";
-           digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0204"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="24";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0034"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="34";
-            digitalWrite(b1,HIGH);
-          }
-        }
-      }
-      else if(c=="3"){
-        if(d=="1230"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="123";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="0234"){
-          if(q-hou==4){
-           Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="234";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1034"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="134";
-            digitalWrite(b1,HIGH);
-          }
-        }
-        else if(d=="1204"){
-          if(q-hou==4){
-           Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="124";
-            digitalWrite(b1,HIGH);
-          }
-        }
-      }
-      else if(c=="4"){
-        if(d=="1234"){
-          if(q-hou==4){
-            Hour2=hou+4;
-            Min1=mint;
-            Sec1=sec;
-            Off="1234";
-            digitalWrite(b1,HIGH);
-          }
-        }
-      }
-    }
-    else{
-      
-    }
-   }
-  }
- 
+}
